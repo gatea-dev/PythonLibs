@@ -82,15 +82,6 @@ class UnixCCompiler(CCompiler):
     if sys.platform == "cygwin":
         exe_extension = ".exe"
 
-    def _fix_lib_args(self, libraries, library_dirs, runtime_library_dirs):
-        """Remove standard library path from rpath"""
-        libraries, library_dirs, runtime_library_dirs = super()._fix_lib_args(
-            libraries, library_dirs, runtime_library_dirs)
-        libdir = sysconfig.get_config_var('LIBDIR')
-        if runtime_library_dirs and (libdir in runtime_library_dirs):
-            runtime_library_dirs.remove(libdir)
-        return libraries, library_dirs, runtime_library_dirs
-
     def preprocess(self, source, output_file=None, macros=None,
                    include_dirs=None, extra_preargs=None, extra_postargs=None):
         fixed_args = self._fix_compile_args(None, macros, include_dirs)
@@ -197,7 +188,15 @@ class UnixCCompiler(CCompiler):
                         i = 1
                         while '=' in linker[i]:
                             i += 1
-                    linker[i] = self.compiler_cxx[i]
+
+                    if os.path.basename(linker[i]) == 'ld_so_aix':
+                        # AIX platforms prefix the compiler with the ld_so_aix
+                        # script, so we need to adjust our linker index
+                        offset = 1
+                    else:
+                        offset = 0
+
+                    linker[i+offset] = self.compiler_cxx[i]
 
                 if sys.platform == 'darwin':
                     linker = _osx_support.compiler_fixup(linker, ld_args)
@@ -216,7 +215,8 @@ class UnixCCompiler(CCompiler):
         return "-L" + dir
 
     def _is_gcc(self, compiler_name):
-        return "gcc" in compiler_name or "g++" in compiler_name
+        # clang uses same syntax for rpath as gcc
+        return any(name in compiler_name for name in ("gcc", "g++", "clang"))
 
     def runtime_library_dir_option(self, dir):
         # XXX Hackish, at the very least.  See Python bug #445902:
@@ -242,8 +242,6 @@ class UnixCCompiler(CCompiler):
             if self._is_gcc(compiler):
                 return ["-Wl,+s", "-L" + dir]
             return ["+s", "-L" + dir]
-        elif sys.platform[:7] == "irix646" or sys.platform[:6] == "osf1V5":
-            return ["-rpath", dir]
         else:
             if self._is_gcc(compiler):
                 # gcc on non-GNU systems does not need -Wl, but can
@@ -291,9 +289,9 @@ class UnixCCompiler(CCompiler):
             # vs
             #   /usr/lib/libedit.dylib
             cflags = sysconfig.get_config_var('CFLAGS')
-            m = re.search(r'-isysroot\s+(\S+)', cflags)
+            m = re.search(r'-isysroot\s*(\S+)', cflags)
             if m is None:
-                sysroot = '/'
+                sysroot = _osx_support._default_sysroot(sysconfig.get_config_var('CC'))
             else:
                 sysroot = m.group(1)
 

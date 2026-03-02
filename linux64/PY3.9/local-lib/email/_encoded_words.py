@@ -62,7 +62,7 @@ __all__ = ['decode_q',
 
 # regex based decoder.
 _q_byte_subber = functools.partial(re.compile(br'=([a-fA-F0-9]{2})').sub,
-        lambda m: bytes([int(m.group(1), 16)]))
+        lambda m: bytes.fromhex(m.group(1).decode()))
 
 def decode_q(encoded):
     encoded = encoded.replace(b'_', b' ')
@@ -179,15 +179,15 @@ def decode(ew):
     # Turn the CTE decoded bytes into unicode.
     try:
         string = bstring.decode(charset)
-    except UnicodeError:
+    except UnicodeDecodeError:
         defects.append(errors.UndecodableBytesDefect("Encoded word "
-            "contains bytes not decodable using {} charset".format(charset)))
+            f"contains bytes not decodable using {charset!r} charset"))
         string = bstring.decode(charset, 'surrogateescape')
-    except LookupError:
+    except (LookupError, UnicodeEncodeError):
         string = bstring.decode('ascii', 'surrogateescape')
         if charset.lower() != 'unknown-8bit':
-            defects.append(errors.CharsetError("Unknown charset {} "
-                "in encoded word; decoded as unknown bytes".format(charset)))
+            defects.append(errors.CharsetError(f"Unknown charset {charset!r} "
+                f"in encoded word; decoded as unknown bytes"))
     return string, charset, lang, defects
 
 

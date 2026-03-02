@@ -1,4 +1,4 @@
-#! /usr/bin/python3.6
+#! /usr/bin/env python3
 
 """Token constants (from "token.h")."""
 
@@ -65,7 +65,8 @@ RARROW = 55
 AWAIT = 56
 ASYNC = 57
 ERRORTOKEN = 58
-N_TOKENS = 59
+COLONEQUAL = 59
+N_TOKENS = 60
 NT_OFFSET = 256
 #--end constants--
 

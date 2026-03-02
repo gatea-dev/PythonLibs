@@ -30,14 +30,14 @@ WINDOWS_SCHEME = {
 INSTALL_SCHEMES = {
     'unix_prefix': {
         'purelib': '$base/lib/python$py_version_short/site-packages',
-        'platlib': '$platbase/lib64/python$py_version_short/site-packages',
+        'platlib': '$platbase/$platlibdir/python$py_version_short/site-packages',
         'headers': '$base/include/python$py_version_short$abiflags/$dist_name',
         'scripts': '$base/bin',
         'data'   : '$base',
         },
     'unix_home': {
         'purelib': '$base/lib/python',
-        'platlib': '$base/lib64/python',
+        'platlib': '$base/$platlibdir/python',
         'headers': '$base/include/python/$dist_name',
         'scripts': '$base/bin',
         'data'   : '$base',
@@ -223,7 +223,7 @@ class install(Command):
 
     def finalize_options(self):
         """Finalizes options."""
-        # This method (and its pliant slaves, like 'finalize_unix()',
+        # This method (and its helpers, like 'finalize_unix()',
         # 'finalize_other()', and 'select_scheme()') is where the default
         # installation directories for modules, extension modules, and
         # anything else we care to install from a Python module
@@ -298,6 +298,7 @@ class install(Command):
                             'sys_exec_prefix': exec_prefix,
                             'exec_prefix': exec_prefix,
                             'abiflags': abiflags,
+                            'platlibdir': sys.platlibdir,
                            }
 
         if HAS_USER_SITE:
@@ -418,19 +419,8 @@ class install(Command):
                     raise DistutilsOptionError(
                           "must not supply exec-prefix without prefix")
 
-                # self.prefix is set to sys.prefix + /local/
-                # if neither RPM build nor virtual environment is
-                # detected to make pip and distutils install packages
-                # into the separate location.
-                if (not (hasattr(sys, 'real_prefix') or
-                    sys.prefix != sys.base_prefix) and
-                    'RPM_BUILD_ROOT' not in os.environ):
-                    addition = "/local"
-                else:
-                    addition = ""
-
-                self.prefix = os.path.normpath(sys.prefix) + addition
-                self.exec_prefix = os.path.normpath(sys.exec_prefix) + addition
+                self.prefix = os.path.normpath(sys.prefix)
+                self.exec_prefix = os.path.normpath(sys.exec_prefix)
 
             else:
                 if self.exec_prefix is None:

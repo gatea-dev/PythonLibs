@@ -23,35 +23,46 @@ BASE_PREFIX = os.path.normpath(sys.base_prefix)
 BASE_EXEC_PREFIX = os.path.normpath(sys.base_exec_prefix)
 
 # Path to the base directory of the project. On Windows the binary may
-# live in project/PCBuild/win32 or project/PCBuild/amd64.
+# live in project/PCbuild/win32 or project/PCbuild/amd64.
 # set for cross builds
 if "_PYTHON_PROJECT_BASE" in os.environ:
     project_base = os.path.abspath(os.environ["_PYTHON_PROJECT_BASE"])
 else:
-    project_base = os.path.dirname(os.path.abspath(sys.executable))
-if (os.name == 'nt' and
-    project_base.lower().endswith(('\\pcbuild\\win32', '\\pcbuild\\amd64'))):
-    project_base = os.path.dirname(os.path.dirname(project_base))
+    if sys.executable:
+        project_base = os.path.dirname(os.path.abspath(sys.executable))
+    else:
+        # sys.executable can be empty if argv[0] has been changed and Python is
+        # unable to retrieve the real program name
+        project_base = os.getcwd()
+
 
 # python_build: (Boolean) if true, we're either building Python or
 # building an extension with an un-installed Python, so we use
 # different (hard-wired) directories.
-# Setup.local is available for Makefile builds including VPATH builds,
-# Setup.dist is available on Windows
 def _is_python_source_dir(d):
-    for fn in ("Setup.dist", "Setup.local"):
+    for fn in ("Setup", "Setup.local"):
         if os.path.isfile(os.path.join(d, "Modules", fn)):
             return True
     return False
+
 _sys_home = getattr(sys, '_home', None)
-if (_sys_home and os.name == 'nt' and
-    _sys_home.lower().endswith(('\\pcbuild\\win32', '\\pcbuild\\amd64'))):
-    _sys_home = os.path.dirname(os.path.dirname(_sys_home))
+
+if os.name == 'nt':
+    def _fix_pcbuild(d):
+        if d and os.path.normcase(d).startswith(
+                os.path.normcase(os.path.join(PREFIX, "PCbuild"))):
+            return PREFIX
+        return d
+    project_base = _fix_pcbuild(project_base)
+    _sys_home = _fix_pcbuild(_sys_home)
+
 def _python_build():
     if _sys_home:
         return _is_python_source_dir(_sys_home)
     return _is_python_source_dir(project_base)
+
 python_build = _python_build()
+
 
 # Calculate the build qualifier flags if they are defined.  Adding the flags
 # to the include and lib directories only makes sense for an installation, not
@@ -101,6 +112,11 @@ def get_python_inc(plat_specific=0, prefix=None):
         python_dir = 'python' + get_python_version() + build_flags
         return os.path.join(prefix, "include", python_dir)
     elif os.name == "nt":
+        if python_build:
+            # Include both the include and PC dir to ensure we can find
+            # pyconfig.h
+            return (os.path.join(prefix, "include") + os.path.pathsep +
+                    os.path.join(prefix, "PC"))
         return os.path.join(prefix, "include")
     else:
         raise DistutilsPlatformError(
@@ -130,11 +146,14 @@ def get_python_lib(plat_specific=0, standard_lib=0, prefix=None):
 
     if os.name == "posix":
         if plat_specific or standard_lib:
-            lib = "lib64"
+            # Platform-specific modules (any module from a non-pure-Python
+            # module distribution) or standard Python library modules.
+            libdir = sys.platlibdir
         else:
-            lib = "lib"
-        libpython = os.path.join(prefix,
-                                 lib, "python" + get_python_version())
+            # Pure Python
+            libdir = "lib"
+        libpython = os.path.join(prefix, libdir,
+                                 "python" + get_python_version())
         if standard_lib:
             return libpython
         else:
@@ -174,8 +193,8 @@ def customize_compiler(compiler):
                 _osx_support.customize_compiler(_config_vars)
                 _config_vars['CUSTOMIZED_OSX_COMPILER'] = 'True'
 
-        (cc, cxx, opt, cflags, ccshared, ldshared, shlib_suffix, ar, ar_flags) = \
-            get_config_vars('CC', 'CXX', 'OPT', 'CFLAGS',
+        (cc, cxx, cflags, ccshared, ldshared, shlib_suffix, ar, ar_flags) = \
+            get_config_vars('CC', 'CXX', 'CFLAGS',
                             'CCSHARED', 'LDSHARED', 'SHLIB_SUFFIX', 'AR', 'ARFLAGS')
 
         if 'CC' in os.environ:
@@ -198,7 +217,7 @@ def customize_compiler(compiler):
         if 'LDFLAGS' in os.environ:
             ldshared = ldshared + ' ' + os.environ['LDFLAGS']
         if 'CFLAGS' in os.environ:
-            cflags = opt + ' ' + os.environ['CFLAGS']
+            cflags = cflags + ' ' + os.environ['CFLAGS']
             ldshared = ldshared + ' ' + os.environ['CFLAGS']
         if 'CPPFLAGS' in os.environ:
             cpp = cpp + ' ' + os.environ['CPPFLAGS']
@@ -234,7 +253,7 @@ def get_config_h_filename():
     else:
         inc_dir = get_python_inc(plat_specific=1)
 
-    return os.path.join(inc_dir, 'pyconfig-64.h')
+    return os.path.join(inc_dir, 'pyconfig.h')
 
 
 def get_makefile_filename():
@@ -356,10 +375,7 @@ def parse_makefile(fn, g=None):
                     done[n] = item = ""
                 if found:
                     after = value[m.end():]
-                    value = value[:m.start()]
-                    if item.strip() not in value:
-                        value += item
-                    value += after
+                    value = value[:m.start()] + item + after
                     if "$" in after:
                         notdone[name] = value
                     else:
